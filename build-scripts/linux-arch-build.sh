@@ -7,4 +7,4 @@ mkdir release
 make clean
 make
 
-mv ./minerd ./release/minerd-$1-$2
+mv ./minerd ./release/minerd-linux-$1-$2

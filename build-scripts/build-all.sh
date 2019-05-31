@@ -27,15 +27,15 @@ rm -rf release
 
 for i in "${archs[@]}"
 do
-  ./build-scripts/build-for-platform.sh $i
+  ./build-scripts/linux-arch-build.sh $i
 done
 
 cd release
 
-cp ./minerd-intel-skylake ./minerd-intel-kabylake
-mv ./minerd-amd-bdver1 ./minerd-amd-bulldozer1
-mv ./minerd-amd-bdver2 ./minerd-amd-bulldozer2
-mv ./minerd-amd-bdver3 ./minerd-amd-bulldozer3
-mv ./minerd-amd-bdver4 ./minerd-amd-bulldozer4
-mv ./minerd-amd-znver1 ./minerd-amd-ryzen1
-mv ./minerd-amd-znver2 ./minerd-amd-ryzen2
+cp ./minerd-linux-intel-skylake ./minerd-linux-intel-kabylake
+mv ./minerd-linux-amd-bdver1 ./minerd-linux-amd-bulldozer1
+mv ./minerd-linux-amd-bdver2 ./minerd-linux-amd-bulldozer2
+mv ./minerd-linux-amd-bdver3 ./minerd-linux-amd-bulldozer3
+mv ./minerd-linux-amd-bdver4 ./minerd-linux-amd-bulldozer4
+mv ./minerd-linux-amd-znver1 ./minerd-linux-amd-ryzen1
+mv ./minerd-linux-amd-znver2 ./minerd-linux-amd-ryzen2
