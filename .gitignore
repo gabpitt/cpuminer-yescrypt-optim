@@ -6,6 +6,7 @@ autom4te.cache
 .deps
 
 Makefile
+.vscode
 Makefile.in
 INSTALL
 aclocal.m4
@@ -33,3 +34,4 @@ deps/curl-7.54.1/
 deps/i686-w64-mingw32/
 deps/x86_64-w64-mingw32/
 deps/pthread-win32/
+release
