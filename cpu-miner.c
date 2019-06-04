@@ -133,7 +133,7 @@ static int opt_fail_pause = 30;
 int opt_timeout = 0;
 static int opt_scantime = 5;
 static const bool opt_time = true;
-static enum algos opt_algo = ALGO_YESPOWER;
+static enum algos opt_algo = ALGO_YESCRYPT;
 static int opt_n_threads;
 static int num_processors;
 static char *rpc_url;
@@ -175,8 +175,8 @@ static char const usage[] = "\
 Usage: " PROGRAM_NAME " [OPTIONS]\n\
 Options:\n\
   -a, --algo=ALGO       specify the algorithm to use\n\
-                          yescrypt yescrypt\n\
-                          yespower yespower 0.5 (default)\n\
+                          yescrypt yescrypt (default)\n\
+                          yespower yespower 0.5\n\
   -o, --url=URL         URL of mining server\n\
   -O, --userpass=U:P    username:password pair for mining server\n\
   -u, --user=USERNAME   username for mining server\n\
