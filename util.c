@@ -1,7 +1,7 @@
 /*
  * Copyright 2010 Jeff Garzik
  * Copyright 2012 Luke Dashjr
- * Copyright 2012-2014 pooler
+ * Copyright 2012-2017 pooler
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -507,6 +507,16 @@ err_out:
 	return NULL;
 }
 
+void memrev(unsigned char *p, size_t len)
+{
+	unsigned char c, *q;
+	for (q = p + len - 1; p < q; p++, q--) {
+		c = *p;
+		*p = *q;
+		*q = c;
+	}
+}
+
 void bin2hex(char *s, const unsigned char *p, size_t len)
 {
 	int i;
@@ -651,7 +661,7 @@ static int b58check(unsigned char *bin, size_t binsz, const char *b58)
 
 size_t address_to_script(unsigned char *out, size_t outsz, const char *addr)
 {
-	unsigned char addrbin[26];
+	unsigned char addrbin[25];
 	int addrver;
 	size_t rv;
 
@@ -726,7 +736,7 @@ bool fulltest(const uint32_t *hash, const uint32_t *target)
 		}
 	}
 
-	if (opt_debug || opt_hashdebug) {
+	if (opt_debug) {
 		uint32_t hash_be[8], target_be[8];
 		char hash_str[65], target_str[65];
 		
@@ -770,7 +780,7 @@ void diff_to_target(uint32_t *target, double diff)
 #define socket_blocks() (errno == EAGAIN || errno == EWOULDBLOCK)
 #endif
 
-static bool send_line(curl_socket_t sock, char *s)
+static bool send_line(struct stratum_ctx *sctx, char *s)
 {
 	ssize_t len, sent = 0;
 	
@@ -783,12 +793,18 @@ static bool send_line(curl_socket_t sock, char *s)
 		fd_set wd;
 
 		FD_ZERO(&wd);
-		FD_SET(sock, &wd);
-		if (select(sock + 1, NULL, &wd, NULL, &timeout) < 1)
+		FD_SET(sctx->sock, &wd);
+		if (select(sctx->sock + 1, NULL, &wd, NULL, &timeout) < 1)
 			return false;
-		n = send(sock, s + sent, len, 0);
+#if LIBCURL_VERSION_NUM >= 0x071202
+		CURLcode rc = curl_easy_send(sctx->curl, s + sent, len, (size_t *)&n);
+		if (rc != CURLE_OK) {
+			if (rc != CURLE_AGAIN)
+#else
+		n = send(sctx->sock, s + sent, len, 0);
 		if (n < 0) {
 			if (!socket_blocks())
+#endif
 				return false;
 			n = 0;
 		}
@@ -807,7 +823,7 @@ bool stratum_send_line(struct stratum_ctx *sctx, char *s)
 		applog(LOG_DEBUG, "> %s", s);
 
 	pthread_mutex_lock(&sctx->sock_lock);
-	ret = send_line(sctx->sock, s);
+	ret = send_line(sctx, s);
 	pthread_mutex_unlock(&sctx->sock_lock);
 
 	return ret;
@@ -867,6 +883,15 @@ char *stratum_recv_line(struct stratum_ctx *sctx)
 			ssize_t n;
 
 			memset(s, 0, RBUFSIZE);
+#if LIBCURL_VERSION_NUM >= 0x071202
+			CURLcode rc = curl_easy_recv(sctx->curl, s, RECVSIZE, (size_t *)&n);
+			if (rc == CURLE_OK && !n) {
+				ret = false;
+				break;
+			}
+			if (rc != CURLE_OK) {
+				if (rc != CURLE_AGAIN || !socket_full(sctx->sock, 1)) {
+#else
 			n = recv(sctx->sock, s, RECVSIZE, 0);
 			if (!n) {
 				ret = false;
@@ -874,6 +899,7 @@ char *stratum_recv_line(struct stratum_ctx *sctx)
 			}
 			if (n < 0) {
 				if (!socket_blocks() || !socket_full(sctx->sock, 1)) {
+#endif
 					ret = false;
 					break;
 				}
@@ -945,11 +971,13 @@ bool stratum_connect(struct stratum_ctx *sctx, const char *url)
 	}
 	free(sctx->curl_url);
 	sctx->curl_url = malloc(strlen(url));
-	sprintf(sctx->curl_url, "http%s", strstr(url, "://"));
+	sprintf(sctx->curl_url, "http%s", url + 11);
 
 	if (opt_protocol)
 		curl_easy_setopt(curl, CURLOPT_VERBOSE, 1);
 	curl_easy_setopt(curl, CURLOPT_URL, sctx->curl_url);
+	if (opt_cert)
+		curl_easy_setopt(curl, CURLOPT_CAINFO, opt_cert);
 	curl_easy_setopt(curl, CURLOPT_FRESH_CONNECT, 1);
 	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30);
 	curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, sctx->curl_err_str);
@@ -1175,13 +1203,12 @@ out:
 
 static bool stratum_notify(struct stratum_ctx *sctx, json_t *params)
 {
-	const char *job_id, *prevhash, *coinb1, *coinb2, *version, *nbits, *ntime, *finalsaplinghash;
+	const char *job_id, *prevhash, *coinb1, *coinb2, *version, *nbits, *ntime;
 	size_t coinb1_size, coinb2_size;
 	bool clean, ret = false;
 	int merkle_count, i;
 	json_t *merkle_arr;
 	unsigned char **merkle;
-	int ver;
 
 	job_id = json_string_value(json_array_get(params, 0));
 	prevhash = json_string_value(json_array_get(params, 1));
@@ -1201,15 +1228,6 @@ static bool stratum_notify(struct stratum_ctx *sctx, json_t *params)
 	    strlen(nbits) != 8 || strlen(ntime) != 8) {
 		applog(LOG_ERR, "Stratum notify: invalid parameters");
 		goto out;
-	}
-	hex2bin(sctx->job.version, version, 4);
-	ver = be32dec(sctx->job.version);
-	if (ver == 5) {
-		finalsaplinghash = json_string_value(json_array_get(params, 9));
-		if (!finalsaplinghash || strlen(finalsaplinghash) != 64) {
-			applog(LOG_ERR, "Stratum notify: invalid parameters");
-			goto out;
-		}
 	}
 	merkle = malloc(merkle_count * sizeof(char *));
 	for (i = 0; i < merkle_count; i++) {
@@ -1242,9 +1260,6 @@ static bool stratum_notify(struct stratum_ctx *sctx, json_t *params)
 	free(sctx->job.job_id);
 	sctx->job.job_id = strdup(job_id);
 	hex2bin(sctx->job.prevhash, prevhash, 32);
-	if (ver == 5) {
-		hex2bin(sctx->job.finalsaplinghash, finalsaplinghash, 32);
-	}
 
 	for (i = 0; i < sctx->job.merkle_count; i++)
 		free(sctx->job.merkle[i]);
@@ -1252,6 +1267,7 @@ static bool stratum_notify(struct stratum_ctx *sctx, json_t *params)
 	sctx->job.merkle = merkle;
 	sctx->job.merkle_count = merkle_count;
 
+	hex2bin(sctx->job.version, version, 4);
 	hex2bin(sctx->job.nbits, nbits, 4);
 	hex2bin(sctx->job.ntime, ntime, 4);
 	sctx->job.clean = clean;
@@ -1301,7 +1317,8 @@ static bool stratum_reconnect(struct stratum_ctx *sctx, json_t *params)
 		return false;
 
 	url = malloc(32 + strlen(host));
-	sprintf(url, "stratum+tcp://%s:%d", host, port);
+	strncpy(url, sctx->url, 15);
+	sprintf(strstr(url, "://") + 3, "%s:%d", host, port);
 
 	if (!opt_redirect) {
 		applog(LOG_INFO, "Ignoring request to reconnect to %s", url);

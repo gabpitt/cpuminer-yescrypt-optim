@@ -1,9 +1,9 @@
-AC_INIT([cpuminer], [3.2])
+AC_INIT([cpuminer-mc], [2.6.0])
 
 AC_PREREQ([2.59c])
 AC_CANONICAL_SYSTEM
 AC_CONFIG_SRCDIR([cpu-miner.c])
-AM_INIT_AUTOMAKE([gnu])
+AM_INIT_AUTOMAKE([gnu subdir-objects])
 AC_CONFIG_HEADERS([cpuminer-config.h])
 
 dnl Make sure anyone changing configure.ac/Makefile.am has a clue
@@ -47,6 +47,12 @@ case $target in
     ;;
   arm*-*-*)
     have_arm=true
+    ;;
+  aarch64*-*-*)
+    have_arm=true
+    ;;
+  powerpc*-*-*)
+    have_ppc=true
     ;;
 esac
 
@@ -108,6 +114,7 @@ AM_CONDITIONAL([USE_ASM], [test x$enable_assembly != xno])
 AM_CONDITIONAL([ARCH_x86], [test x$have_x86 = xtrue])
 AM_CONDITIONAL([ARCH_x86_64], [test x$have_x86_64 = xtrue])
 AM_CONDITIONAL([ARCH_ARM], [test x$have_arm = xtrue])
+AM_CONDITIONAL([ARCH_PPC], [test x$have_ppc = xtrue])
 
 if test x$request_jansson = xtrue
 then
